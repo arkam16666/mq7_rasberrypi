@@ -55,7 +55,7 @@ sudo pip3 install --upgrade adafruit-blinka
 
 1. Clone or download this repository to your Raspberry Pi:
 ```bash
-cd /home/arka/mq7_rasberrypi
+cd mq7_rasberrypi
 ```
 
 2. Ensure all dependencies are installed (see above)
