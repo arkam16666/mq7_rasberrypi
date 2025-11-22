@@ -17,7 +17,12 @@
 
 ## อธิบายโค้ด
 
-### 1. Import Libraries
+### 1. ติดตั้ง Libraries
+```python
+   pip3 install -r requirements.txt
+```
+### 2. Import Libraries
+
 ```python
 import csv              # เขียนข้อมูลลง CSV
 import os               # เช็คว่าไฟล์มีอยู่หรือไม่
