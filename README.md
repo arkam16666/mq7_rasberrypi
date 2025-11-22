@@ -1,83 +1,136 @@
-# Raspberry Pi Environmental & Gas Monitoring System
+# MQ7 & DHT22 Sensor Monitoring
 
-A Python-based IoT project that monitors environmental conditions (temperature and humidity) and carbon monoxide/gas levels using DHT22 and MQ-7 sensors connected to a Raspberry Pi.
+โปรแกรม Python สำหรับติดตามอุณหภูมิ ความชื้น และก๊าซคาร์บอนมอนอกไซด์ (CO) ด้วย Raspberry Pi
 
-## 📋 Overview
+## ภาพรวม
 
-This system continuously monitors:
-- **Temperature** (°C) via DHT22 sensor
-- **Humidity** (%) via DHT22 sensor  
-- **Gas/CO Detection** via MQ-7 sensor (digital mode)
+ระบบนี้ทำงานตลอด 24 ชั่วโมงเพื่อ:
+- วัด**อุณหภูมิ** (°C) จาก DHT22
+- วัด**ความชื้น** (%) จาก DHT22
+- ตรวจจับ**ก๊าซ/CO** จาก MQ-7 (แบบ digital)
+- บันทึกข้อมูลทั้งหมดลงไฟล์ CSV พร้อม timestamp
 
-All readings are logged to a CSV file with timestamps, creating a historical record of environmental conditions.
+## การเชื่อมต่อ Hardware
 
-## 🔧 Hardware Requirements
+- **DHT22** → GPIO 4 (Pin 7)
+- **MQ-7** → GPIO 17 (Pin 11)
 
-- **Raspberry Pi** (any model with GPIO pins)
-- **DHT22 Temperature & Humidity Sensor**
-- **MQ-7 Carbon Monoxide Gas Sensor**
-- Jumper wires
-- Breadboard (optional)
+## อธิบายโค้ด
 
-## 🔌 Wiring Connections
-
-### DHT22 Sensor
-- **VCC** → 3.3V or 5V on Raspberry Pi
-- **DATA** → GPIO 4 (Pin 7)
-- **GND** → Ground
-
-### MQ-7 Gas Sensor
-- **VCC** → 5V on Raspberry Pi
-- **DOUT** → GPIO 17 (Pin 11) - Digital output mode
-- **GND** → Ground
-
-## 📦 Software Dependencies
-
-Install the required Python libraries:
-
-```bash
-# Update system packages
-sudo apt-get update
-sudo apt-get upgrade
-
-# Install pip if not already installed
-sudo apt-get install python3-pip
-
-# Install required libraries
-pip3 install adafruit-circuitpython-dht
-sudo apt-get install libgpiod2
-
-# For DHT sensors, you may also need
-sudo pip3 install --upgrade adafruit-blinka
+### 1. Import Libraries
+```python
+import csv              # เขียนข้อมูลลง CSV
+import os               # เช็คว่าไฟล์มีอยู่หรือไม่
+import time             # หน่วงเวลา
+import board            # GPIO pins
+import digitalio        # อ่านค่า digital
+import adafruit_dht     # ไลบรารี DHT22
+from datetime import datetime, timedelta
 ```
 
-## 🚀 Installation
+### 2. ตั้งค่า Sensors
+```python
+mq7_pin = board.D17                          # MQ-7 ใช้ GPIO 17
+dhtDevice = adafruit_dht.DHT22(board.D4)     # DHT22 ใช้ GPIO 4
 
-1. Clone or download this repository to your Raspberry Pi:
-```bash
-cd mq7_rasberrypi
+mq7 = digitalio.DigitalInOut(mq7_pin)
+mq7.direction = digitalio.Direction.INPUT    # ตั้งเป็น input
 ```
 
-2. Ensure all dependencies are installed (see above)
+**อธิบาย:**
+- `board.D17` และ `board.D4` คือ GPIO pins ที่เชื่อมต่อกับเซนเซอร์
+- MQ-7 ตั้งเป็น INPUT เพื่ออ่านสัญญาณ digital (HIGH/LOW)
 
-3. Connect the sensors according to the wiring diagram
-
-## ▶️ Usage
-
-Run the monitoring script:
-
-```bash
-python3 mq7.py
+### 3. สร้างไฟล์ CSV
+```python
+csv_file_path = "data.csv"
+if not os.path.exists(csv_file_path):
+    with open(csv_file_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["temp_c", "humidity", "gas_detected", "timestamp"])
 ```
 
-The program will:
-1. Initialize both sensors
-2. Wait 2 seconds for the MQ-7 sensor to warm up
-3. Display "Ready!" when initialization is complete
-4. Begin continuous monitoring with readings every 60 seconds
+**อธิบาย:**
+- เช็คว่ามีไฟล์ `data.csv` อยู่แล้วหรือไม่
+- ถ้าไม่มี → สร้างไฟล์ใหม่และเขียน header row
 
-### Sample Output
+### 4. Main Loop - อ่านค่าทุก 60 วินาที
 
+#### 4.1 เตรียมตัวแปร
+```python
+while True:
+    temp_c = None
+    humidity = None
+    now = (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+```
+
+**อธิบาย:**
+- ตั้งค่าเริ่มต้นเป็น `None`
+- `timedelta(hours=7)` ปรับเวลาเป็น GMT+7 (เวลาไทย)
+- Format เป็น `"2025-11-22 17:23:00"`
+
+#### 4.2 อ่านค่า DHT22 (Temperature & Humidity)
+```python
+try:
+    temp_c = dhtDevice.temperature
+    humidity = dhtDevice.humidity
+    if temp_c is not None and humidity is not None:
+        print(f"[{now}] Temp: {temp_c:.1f}°C  Humidity: {humidity:.1f}%")
+    else:
+        print("Sensor read failed, retrying...")
+except RuntimeError as error:
+    print(error.args[0])
+    time.sleep(2.0)
+    continue
+except Exception as error:
+    dhtDevice.exit()
+    raise error
+```
+
+**อธิบาย:**
+- `dhtDevice.temperature` อ่านอุณหภูมิ
+- `dhtDevice.humidity` อ่านความชื้น
+- **RuntimeError**: เกิดขึ้นบ่อยกับ DHT22 (เซนเซอร์ไม่พร้อม) → รอ 2 วินาทีแล้วลองใหม่
+- **Exception อื่นๆ**: ปิดเซนเซอร์และ raise error
+
+#### 4.3 อ่านค่า MQ-7 (Gas Detection)
+```python
+if not mq7.value: 
+    print("Gas/CO Detected!")
+else:
+    print("Normal")
+
+gas_detected = not mq7.value
+```
+
+**อธิบาย:**
+- `mq7.value` คืนค่า `True` (HIGH) หรือ `False` (LOW)
+- เซนเซอร์ MQ-7 output = **LOW (False)** เมื่อ**ตรวจจับก๊าซ**
+- เซนเซอร์ MQ-7 output = **HIGH (True)** เมื่อ**ปกติ**
+- `not mq7.value` เปลี่ยนเป็น `True` = ตรวจจับก๊าซ, `False` = ปกติ
+
+#### 4.4 บันทึกข้อมูลลง CSV
+```python
+with open(csv_file_path, mode='a', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow([temp_c, humidity, gas_detected, now])
+```
+
+**อธิบาย:**
+- `mode='a'` = append (เพิ่มข้อมูลต่อท้าย ไม่ลบข้อมูลเก่า)
+- เขียน 4 columns: อุณหภูมิ, ความชื้น, ตรวจจับก๊าซ, เวลา
+
+#### 4.5 หน่วงเวลา
+```python
+time.sleep(60)
+```
+
+**อธิบาย:**
+- รอ 60 วินาที (1 นาที) ก่อนอ่านค่าใหม่
+
+## ผลลัพธ์
+
+### หน้าจอ Terminal
 ```
 MQ-7 Gas Sensor Test (Digital Mode)
 Waiting for sensor to warm up...
@@ -88,19 +141,7 @@ Normal
 Gas/CO Detected!
 ```
 
-## 📊 Data Logging
-
-All sensor readings are automatically saved to `data.csv` with the following columns:
-
-| Column | Description |
-|--------|-------------|
-| `temp_c` | Temperature in Celsius |
-| `humidity` | Relative humidity percentage |
-| `gas_detected` | Boolean (True if gas/CO detected, False if normal) |
-| `timestamp` | Date and time of reading (GMT+7 timezone) |
-
-### CSV Example
-
+### ไฟล์ data.csv
 ```csv
 temp_c,humidity,gas_detected,timestamp
 28.5,65.3,False,2025-11-22 17:23:00
@@ -108,102 +149,26 @@ temp_c,humidity,gas_detected,timestamp
 28.4,65.5,False,2025-11-22 17:25:00
 ```
 
-## 💻 Code Structure
+## จุดสำคัญ
 
-### Initialization
-- Configures MQ-7 sensor on GPIO 17 (digital input)
-- Configures DHT22 sensor on GPIO 4
-- Creates CSV file with headers if it doesn't exist
+⚠️ **MQ-7 Digital Mode**
+- โค้ดนี้ใช้ MQ-7 แบบ **digital** (ตรวจจับ HIGH/LOW)
+- ไม่สามารถวัดความเข้มข้นของก๊าซ (ppm) ได้
+- ถ้าต้องการค่า ppm → ใช้ analog mode + ADC
 
-### Main Loop
-1. **Read DHT22 Sensor**: Attempts to read temperature and humidity
-2. **Error Handling**: Retries on sensor read failures
-3. **Read MQ-7 Sensor**: Checks digital output (LOW = gas detected, HIGH = normal)
-4. **Log Data**: Appends all readings to CSV file
-5. **Wait**: 60-second delay before next reading
+⏰ **Timezone**
+- เวลาปรับเป็น GMT+7 (เวลาไทย) ด้วย `timedelta(hours=7)`
 
-### Timezone Configuration
-The code adjusts timestamps by +7 hours to match Thailand timezone (GMT+7):
-```python
-now = (datetime.now() + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
-```
+🔄 **Error Handling**
+- DHT22 อาจอ่านค่าไม่ได้บ้าง → โค้ดจะ retry อัตโนมัติ
 
-## ⚠️ Important Notes
+## การรันโปรแกรม
 
-- **MQ-7 Warm-up**: The MQ-7 sensor requires warm-up time (minimum 2 seconds in code, but 24-48 hours recommended for accurate readings)
-- **Digital Mode**: This implementation uses the MQ-7 in digital mode (threshold-based detection). For more precise CO level measurements, use analog mode with an ADC
-- **Sensor Accuracy**: DHT22 sensors can occasionally fail to read; the code handles this gracefully with retries
-- **Power Requirements**: Ensure your Raspberry Pi power supply can handle both sensors
-
-## 🛠️ Troubleshooting
-
-### DHT22 Sensor Read Failures
-- Check wiring connections
-- Ensure 10K pull-up resistor between DATA and VCC (often built into modules)
-- Add delays between readings (current: 60 seconds, which is adequate)
-
-### MQ-7 Not Detecting Gas
-- Allow proper warm-up time (24-48 hours for first use)
-- Check wiring to GPIO 17
-- Verify sensor module has power LED lit
-- Adjust sensitivity potentiometer on MQ-7 module if available
-
-### Permission Errors
-Run the script with sudo if you encounter GPIO permission errors:
 ```bash
-sudo python3 mq7.py
+python3 mq7.py
 ```
-
-## 🔄 Running on Startup (Optional)
-
-To run the script automatically on boot:
-
-1. Create a systemd service:
-```bash
-sudo nano /etc/systemd/system/mq7-monitor.service
-```
-
-2. Add the following content:
-```ini
-[Unit]
-Description=MQ7 Environmental Monitoring
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /home/arka/mq7_rasberrypi/mq7.py
-WorkingDirectory=/home/arka/mq7_rasberrypi
-StandardOutput=inherit
-StandardError=inherit
-Restart=always
-User=arka
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Enable and start the service:
-```bash
-sudo systemctl enable mq7-monitor.service
-sudo systemctl start mq7-monitor.service
-```
-
-## 📈 Future Enhancements
-
-- Add analog reading support for precise CO concentration (ppm)
-- Implement data visualization dashboard
-- Set up alerts for high temperature/humidity or gas detection
-- Upload data to cloud services (ThingSpeak, Google Sheets, etc.)
-- Add more sensors (air quality, pressure, etc.)
-
-## 📝 License
-
-This project is open source and available for educational and personal use.
-
-## 🤝 Contributing
-
-Feel free to fork this project and submit pull requests for improvements!
 
 ---
 
-**Author**: IoT Environmental Monitoring Project  
-**Last Updated**: November 2025
+**Hardware:** Raspberry Pi + DHT22 + MQ-7  
+**Language:** Python 3
